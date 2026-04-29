@@ -258,6 +258,7 @@ label {
 
   <div class="card" style="text-align:center;">
     <button class="secondary" onclick="addPlayerMidGame()">Add Player</button>
+    <button class="danger" onclick="newGame()">New Game</button>
     <button class="danger" onclick="resetGame()">Reset This Game</button>
   </div>
 </div>
@@ -449,6 +450,22 @@ function backToGames() {
   document.getElementById("gameSelect").classList.remove("hidden");
   document.getElementById("playerSetup").classList.add("hidden");
   document.getElementById("gameArea").classList.add("hidden");
+}
+
+function newGame() {
+  const firstCheck = confirm("Start a new game? This will erase the saved scores for this game.");
+  if (!firstCheck) return;
+
+  const secondCheck = confirm("Yes, I want to start over.");
+  if (!secondCheck) return;
+
+  clearCurrentGameSave();
+
+  players = [];
+  rounds = [];
+  catanData = {};
+
+  openPlayerSetup();
 }
 
 function resetGame() {
