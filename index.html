@@ -47,6 +47,15 @@ button {
 .danger { background: #b94b4b; }
 .back-button { background: #9c8574; }
 
+.small-btn {
+  padding: 6px 10px;
+  font-size: 14px;
+  border-radius: 10px;
+  margin: 0;
+  min-width: 40px;
+  width: auto;
+}
+
 .top-back {
   text-align: left;
   margin-bottom: 8px;
@@ -162,30 +171,13 @@ label {
 }
 
 @media (max-width: 600px) {
-  body {
-    padding: 12px;
-  }
-
-  h1 {
-    font-size: 26px;
-  }
-
-  .card {
-    padding: 16px;
-  }
-
-  .game-grid {
-    grid-template-columns: 1fr;
-  }
-
-  button {
-    width: 100%;
-    margin: 6px 0;
-  }
-
-  .player-row {
-    grid-template-columns: 1fr;
-  }
+  body { padding: 12px; }
+  h1 { font-size: 26px; }
+  .card { padding: 16px; }
+  .game-grid { grid-template-columns: 1fr; }
+  button { width: 100%; margin: 6px 0; }
+  .small-btn { width: auto; margin: 0; }
+  .player-row { grid-template-columns: 1fr auto; }
 }
 </style>
 </head>
@@ -249,8 +241,8 @@ label {
   <div id="scoringArea" class="card"></div>
 
   <div class="card">
-    <h3>📖 Game Night Memories</h3>
-    <div id="history" class="round-history">No memories yet.</div>
+    <h3>📊 Round Totals</h3>
+    <div id="history" class="round-history">No rounds yet.</div>
   </div>
 
   <div class="card" style="text-align:center;">
@@ -285,7 +277,7 @@ const funMessages = [
   "Game night magic! ✨",
   "The competition is heating up! 🔥",
   "Someone’s making a comeback! 😄",
-  "Another memory made! 💐",
+  "Another round down! 💐",
   "This is getting good! 🎲"
 ];
 
@@ -316,7 +308,7 @@ function addPlayerInput() {
   div.className = "player-row";
   div.innerHTML = `
     <input placeholder="Player name">
-    <button class="danger" onclick="this.parentElement.remove()">Remove</button>
+    <button class="danger small-btn" onclick="this.parentElement.remove()">✕</button>
   `;
   document.getElementById("playerInputs").appendChild(div);
 }
@@ -437,7 +429,7 @@ function renderScoreboard() {
 
 function renderHistory() {
   const history = document.getElementById("history");
-  history.innerHTML = rounds.length ? rounds.join("<br>") : "No memories yet.";
+  history.innerHTML = rounds.length ? rounds.join("<br>") : "No rounds yet.";
 }
 
 function makeHighlightedRoundHistory(roundLabel, scores, lowScoreWins) {
