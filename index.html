@@ -67,10 +67,6 @@ button {
   border: 2px solid #d9829c;
 }
 
-.saved-button {
-  background: #6fa875;
-}
-
 .game-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -204,11 +200,6 @@ label {
 <div id="gameSelect" class="card">
   <h2>Choose a Game</h2>
 
-  <div id="savedGameBox" class="hidden" style="text-align:center;">
-    <button class="saved-button" onclick="continueSavedGame()">Continue Saved Game</button>
-    <div class="save-note">Your current game is saved automatically.</div>
-  </div>
-
   <div class="game-grid">
     <button class="game-notermann" onclick="chooseGame('notermann')">🎲 Notermann</button>
     <button class="game-catan" onclick="chooseGame('catan')">🧱 Catan</button>
@@ -254,7 +245,7 @@ label {
     <h2 id="gameTitle"></h2>
     <p id="gameHint" class="small"></p>
     <table class="scoreboard" id="scoreboard"></table>
-    <div class="save-note">Saved automatically ✅</div>
+    <div class="save-note">This game saves automatically ✅</div>
     <div id="funMessage" class="fun-message hidden"></div>
   </div>
 
@@ -267,7 +258,7 @@ label {
 
   <div class="card" style="text-align:center;">
     <button class="danger" onclick="resetGame()">Reset This Game</button>
-    <button class="secondary" onclick="backToGames()">Choose New Game</button>
+    <button class="secondary" onclick="newGameSameType()">New Players for This Game</button>
   </div>
 </div>
 
@@ -279,7 +270,7 @@ let players = [];
 let rounds = [];
 let catanData = {};
 
-const STORAGE_KEY = "granleenSavedGame";
+const STORAGE_PREFIX = "granleenSavedGame_";
 
 const gameNames = {
   notermann: "🎲 Notermann",
@@ -303,6 +294,10 @@ const funMessages = [
   "This is getting good! 🎲"
 ];
 
+function storageKey(game) {
+  return STORAGE_PREFIX + game;
+}
+
 function saveGame() {
   if (!selectedGame || players.length === 0) return;
 
@@ -313,56 +308,29 @@ function saveGame() {
     catanData
   };
 
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  updateSavedGameButton();
+  localStorage.setItem(storageKey(selectedGame), JSON.stringify(data));
 }
 
-function loadSavedGame() {
-  const saved = localStorage.getItem(STORAGE_KEY);
+function loadGame(game) {
+  const saved = localStorage.getItem(storageKey(game));
   if (!saved) return false;
 
   try {
     const data = JSON.parse(saved);
-    selectedGame = data.selectedGame || "";
+    selectedGame = data.selectedGame || game;
     players = data.players || [];
     rounds = data.rounds || [];
     catanData = data.catanData || {};
-    return selectedGame && players.length > 0;
+    return players.length > 0;
   } catch (e) {
     return false;
   }
 }
 
-function clearSavedGame() {
-  localStorage.removeItem(STORAGE_KEY);
-  updateSavedGameButton();
-}
-
-function updateSavedGameButton() {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  const box = document.getElementById("savedGameBox");
-
-  if (saved) {
-    box.classList.remove("hidden");
-  } else {
-    box.classList.add("hidden");
+function clearCurrentGameSave() {
+  if (selectedGame) {
+    localStorage.removeItem(storageKey(selectedGame));
   }
-}
-
-function continueSavedGame() {
-  if (!loadSavedGame()) {
-    alert("No saved game was found.");
-    updateSavedGameButton();
-    return;
-  }
-
-  document.getElementById("gameSelect").classList.add("hidden");
-  document.getElementById("playerSetup").classList.add("hidden");
-  document.getElementById("gameArea").classList.remove("hidden");
-  document.getElementById("gameTitle").innerText = gameNames[selectedGame];
-  document.getElementById("funMessage").classList.add("hidden");
-
-  renderGame();
 }
 
 function showLoveNote() {
@@ -376,22 +344,35 @@ function showFunMessage() {
 }
 
 function chooseGame(game) {
-  if (localStorage.getItem(STORAGE_KEY)) {
-    const okay = confirm(
-      "You already have a saved game. Starting a new game will replace the saved game once you press Start Game. Continue?"
-    );
-    if (!okay) return;
+  if (loadGame(game)) {
+    openGameScreen();
+  } else {
+    selectedGame = game;
+    players = [];
+    rounds = [];
+    catanData = {};
+    openPlayerSetup();
   }
+}
 
-  selectedGame = game;
+function openPlayerSetup() {
   document.getElementById("gameSelect").classList.add("hidden");
   document.getElementById("playerSetup").classList.remove("hidden");
   document.getElementById("gameArea").classList.add("hidden");
-  document.getElementById("setupTitle").innerText = "Players for " + gameNames[game];
+  document.getElementById("setupTitle").innerText = "Players for " + gameNames[selectedGame];
 
   document.getElementById("playerInputs").innerHTML = "";
   addPlayerInput();
   addPlayerInput();
+}
+
+function openGameScreen() {
+  document.getElementById("gameSelect").classList.add("hidden");
+  document.getElementById("playerSetup").classList.add("hidden");
+  document.getElementById("gameArea").classList.remove("hidden");
+  document.getElementById("gameTitle").innerText = gameNames[selectedGame];
+  document.getElementById("funMessage").classList.add("hidden");
+  renderGame();
 }
 
 function addPlayerInput() {
@@ -405,9 +386,6 @@ function addPlayerInput() {
 }
 
 function startGame() {
-  const okay = confirm("Start this game? This will save this game as the current active game.");
-  if (!okay) return;
-
   players = [];
 
   document.querySelectorAll("#playerInputs input").forEach((input, index) => {
@@ -433,13 +411,8 @@ function startGame() {
     };
   });
 
-  document.getElementById("playerSetup").classList.add("hidden");
-  document.getElementById("gameArea").classList.remove("hidden");
-  document.getElementById("gameTitle").innerText = gameNames[selectedGame];
-  document.getElementById("funMessage").classList.add("hidden");
-
+  openGameScreen();
   saveGame();
-  renderGame();
 }
 
 function backToGames() {
@@ -448,15 +421,21 @@ function backToGames() {
   document.getElementById("gameSelect").classList.remove("hidden");
   document.getElementById("playerSetup").classList.add("hidden");
   document.getElementById("gameArea").classList.add("hidden");
+}
 
-  updateSavedGameButton();
+function newGameSameType() {
+  clearCurrentGameSave();
+  players = [];
+  rounds = [];
+  catanData = {};
+  openPlayerSetup();
 }
 
 function resetGame() {
   const firstCheck = confirm("Are you sure you want to reset this game? This will erase the saved scores.");
   if (!firstCheck) return;
 
-  const secondCheck = confirm("Please confirm: Yes, I want to delete this game data.");
+  const secondCheck = confirm("Yes, I want to delete this game data.");
   if (!secondCheck) return;
 
   players.forEach(p => p.total = 0);
@@ -472,9 +451,10 @@ function resetGame() {
     };
   });
 
-  clearSavedGame();
+  clearCurrentGameSave();
   document.getElementById("funMessage").classList.add("hidden");
   renderGame();
+  saveGame();
 }
 
 function isHighScoreGame() {
@@ -923,10 +903,6 @@ function submitHeartsRound() {
   saveGame();
   renderGame();
 }
-
-window.onload = function() {
-  updateSavedGameButton();
-};
 </script>
 
 </body>
