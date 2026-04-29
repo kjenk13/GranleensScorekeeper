@@ -257,8 +257,8 @@ label {
   </div>
 
   <div class="card" style="text-align:center;">
+    <button class="secondary" onclick="addPlayerMidGame()">Add Player</button>
     <button class="danger" onclick="resetGame()">Reset This Game</button>
-    <button class="secondary" onclick="newGameSameType()">New Players for This Game</button>
   </div>
 </div>
 
@@ -415,20 +415,40 @@ function startGame() {
   saveGame();
 }
 
+function addPlayerMidGame() {
+  const name = prompt("Enter the new player's name:");
+  if (!name || !name.trim()) return;
+
+  const newId = players.length > 0 ? Math.max(...players.map(p => p.id)) + 1 : 0;
+  const cleanName = name.trim();
+
+  players.push({
+    id: newId,
+    name: cleanName,
+    total: 0
+  });
+
+  if (selectedGame === "catan") {
+    catanData[newId] = {
+      settlements: 0,
+      cities: 0,
+      vpCards: 0,
+      longestRoad: false,
+      largestArmy: false
+    };
+  }
+
+  rounds.push(`➕ ${cleanName} joined the game`);
+  saveGame();
+  renderGame();
+}
+
 function backToGames() {
   saveGame();
 
   document.getElementById("gameSelect").classList.remove("hidden");
   document.getElementById("playerSetup").classList.add("hidden");
   document.getElementById("gameArea").classList.add("hidden");
-}
-
-function newGameSameType() {
-  clearCurrentGameSave();
-  players = [];
-  rounds = [];
-  catanData = {};
-  openPlayerSetup();
 }
 
 function resetGame() {
@@ -534,7 +554,15 @@ function renderCatan() {
   let html = "<h3>Enter Current Catan Points</h3>";
 
   players.forEach(p => {
-    const d = catanData[p.id];
+    const d = catanData[p.id] || {
+      settlements: 0,
+      cities: 0,
+      vpCards: 0,
+      longestRoad: false,
+      largestArmy: false
+    };
+
+    catanData[p.id] = d;
 
     html += `
       <div class="card">
@@ -568,7 +596,10 @@ function setCatan(playerId, key, value) {
 
 function toggleExclusiveCatan(playerId, key) {
   const currentlyOn = catanData[playerId][key];
-  players.forEach(p => catanData[p.id][key] = false);
+  players.forEach(p => {
+    if (!catanData[p.id]) return;
+    catanData[p.id][key] = false;
+  });
   catanData[playerId][key] = !currentlyOn;
   updateCatanTotals();
   saveGame();
@@ -578,6 +609,7 @@ function toggleExclusiveCatan(playerId, key) {
 function updateCatanTotals() {
   players.forEach(p => {
     const d = catanData[p.id];
+    if (!d) return;
     p.total = d.settlements + (d.cities * 2) + d.vpCards + (d.longestRoad ? 2 : 0) + (d.largestArmy ? 2 : 0);
   });
   renderScoreboard();
@@ -651,7 +683,7 @@ function submitSimpleLowScoreRound() {
 /* NOTERMANN */
 
 function renderNotermann() {
-  const cardsHeld = rounds.length + 3;
+  const cardsHeld = rounds.filter(r => !r.includes("joined the game")).length + 3;
 
   document.getElementById("gameHint").innerText =
     "Notermann: the number shown is wild for that round. Lowest round score is highlighted.";
@@ -670,7 +702,7 @@ function renderNotermann() {
 }
 
 function submitNotermannRound() {
-  const cardsHeld = rounds.length + 3;
+  const cardsHeld = rounds.filter(r => !r.includes("joined the game")).length + 3;
   let scores = [];
 
   players.forEach(p => {
