@@ -67,6 +67,10 @@ button {
   border: 2px solid #d9829c;
 }
 
+.saved-button {
+  background: #6fa875;
+}
+
 .game-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -157,6 +161,16 @@ label {
   font-weight: bold;
 }
 
+.save-note {
+  background: #eef7ec;
+  color: #4f7b45;
+  font-size: 16px;
+  text-align: center;
+  padding: 10px;
+  border-radius: 14px;
+  margin-top: 10px;
+}
+
 .player-row {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -189,6 +203,11 @@ label {
 
 <div id="gameSelect" class="card">
   <h2>Choose a Game</h2>
+
+  <div id="savedGameBox" class="hidden" style="text-align:center;">
+    <button class="saved-button" onclick="continueSavedGame()">Continue Saved Game</button>
+    <div class="save-note">Your current game is saved automatically.</div>
+  </div>
 
   <div class="game-grid">
     <button class="game-notermann" onclick="chooseGame('notermann')">🎲 Notermann</button>
@@ -228,13 +247,14 @@ label {
 
 <div id="gameArea" class="hidden">
   <div class="top-back">
-    <button class="back-button" onclick="backToPlayerSetup()">← Back</button>
+    <button class="back-button" onclick="backToGames()">← Home</button>
   </div>
 
   <div class="card">
     <h2 id="gameTitle"></h2>
     <p id="gameHint" class="small"></p>
     <table class="scoreboard" id="scoreboard"></table>
+    <div class="save-note">Saved automatically ✅</div>
     <div id="funMessage" class="fun-message hidden"></div>
   </div>
 
@@ -259,6 +279,8 @@ let players = [];
 let rounds = [];
 let catanData = {};
 
+const STORAGE_KEY = "granleenSavedGame";
+
 const gameNames = {
   notermann: "🎲 Notermann",
   catan: "🧱 Catan",
@@ -281,6 +303,68 @@ const funMessages = [
   "This is getting good! 🎲"
 ];
 
+function saveGame() {
+  if (!selectedGame || players.length === 0) return;
+
+  const data = {
+    selectedGame,
+    players,
+    rounds,
+    catanData
+  };
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  updateSavedGameButton();
+}
+
+function loadSavedGame() {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (!saved) return false;
+
+  try {
+    const data = JSON.parse(saved);
+    selectedGame = data.selectedGame || "";
+    players = data.players || [];
+    rounds = data.rounds || [];
+    catanData = data.catanData || {};
+    return selectedGame && players.length > 0;
+  } catch (e) {
+    return false;
+  }
+}
+
+function clearSavedGame() {
+  localStorage.removeItem(STORAGE_KEY);
+  updateSavedGameButton();
+}
+
+function updateSavedGameButton() {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  const box = document.getElementById("savedGameBox");
+
+  if (saved) {
+    box.classList.remove("hidden");
+  } else {
+    box.classList.add("hidden");
+  }
+}
+
+function continueSavedGame() {
+  if (!loadSavedGame()) {
+    alert("No saved game was found.");
+    updateSavedGameButton();
+    return;
+  }
+
+  document.getElementById("gameSelect").classList.add("hidden");
+  document.getElementById("playerSetup").classList.add("hidden");
+  document.getElementById("gameArea").classList.remove("hidden");
+  document.getElementById("gameTitle").innerText = gameNames[selectedGame];
+  document.getElementById("funMessage").classList.add("hidden");
+
+  renderGame();
+}
+
 function showLoveNote() {
   document.getElementById("loveNote").classList.toggle("hidden");
 }
@@ -292,6 +376,13 @@ function showFunMessage() {
 }
 
 function chooseGame(game) {
+  if (localStorage.getItem(STORAGE_KEY)) {
+    const okay = confirm(
+      "You already have a saved game. Starting a new game will replace the saved game once you press Start Game. Continue?"
+    );
+    if (!okay) return;
+  }
+
   selectedGame = game;
   document.getElementById("gameSelect").classList.add("hidden");
   document.getElementById("playerSetup").classList.remove("hidden");
@@ -314,6 +405,9 @@ function addPlayerInput() {
 }
 
 function startGame() {
+  const okay = confirm("Start this game? This will save this game as the current active game.");
+  if (!okay) return;
+
   players = [];
 
   document.querySelectorAll("#playerInputs input").forEach((input, index) => {
@@ -344,27 +438,26 @@ function startGame() {
   document.getElementById("gameTitle").innerText = gameNames[selectedGame];
   document.getElementById("funMessage").classList.add("hidden");
 
+  saveGame();
   renderGame();
 }
 
 function backToGames() {
-  selectedGame = "";
-  players = [];
-  rounds = [];
-  catanData = {};
+  saveGame();
 
   document.getElementById("gameSelect").classList.remove("hidden");
   document.getElementById("playerSetup").classList.add("hidden");
   document.getElementById("gameArea").classList.add("hidden");
-}
 
-function backToPlayerSetup() {
-  document.getElementById("gameArea").classList.add("hidden");
-  document.getElementById("playerSetup").classList.remove("hidden");
+  updateSavedGameButton();
 }
 
 function resetGame() {
-  if (!confirm("Reset this game?")) return;
+  const firstCheck = confirm("Are you sure you want to reset this game? This will erase the saved scores.");
+  if (!firstCheck) return;
+
+  const secondCheck = confirm("Please confirm: Yes, I want to delete this game data.");
+  if (!secondCheck) return;
 
   players.forEach(p => p.total = 0);
   rounds = [];
@@ -379,6 +472,7 @@ function resetGame() {
     };
   });
 
+  clearSavedGame();
   document.getElementById("funMessage").classList.add("hidden");
   renderGame();
 }
@@ -401,6 +495,8 @@ function renderGame() {
   if (selectedGame === "skipbo") renderSkipBo();
   if (selectedGame === "spades") renderSpades();
   if (selectedGame === "hearts") renderHearts();
+
+  saveGame();
 }
 
 function renderScoreboard() {
@@ -486,6 +582,7 @@ function renderCatan() {
 function setCatan(playerId, key, value) {
   catanData[playerId][key] = Math.max(0, Number(value || 0));
   updateCatanTotals();
+  saveGame();
   renderGame();
 }
 
@@ -494,6 +591,7 @@ function toggleExclusiveCatan(playerId, key) {
   players.forEach(p => catanData[p.id][key] = false);
   catanData[playerId][key] = !currentlyOn;
   updateCatanTotals();
+  saveGame();
   renderGame();
 }
 
@@ -566,6 +664,7 @@ function submitSimpleLowScoreRound() {
 
   rounds.push(note + makeHighlightedRoundHistory(`Round ${rounds.length + 1}`, scores, true));
   showFunMessage();
+  saveGame();
   renderGame();
 }
 
@@ -602,6 +701,7 @@ function submitNotermannRound() {
 
   rounds.push(makeHighlightedRoundHistory(cardsHeld, scores, true));
   showFunMessage();
+  saveGame();
   renderGame();
 }
 
@@ -638,6 +738,7 @@ function submitPhase10Round() {
 
   rounds.push(makeHighlightedRoundHistory(`Round ${rounds.length + 1}`, scores, true));
   showFunMessage();
+  saveGame();
   renderGame();
 }
 
@@ -684,6 +785,7 @@ function submitUnoRound() {
 
   rounds.push(`<strong>Round ${rounds.length + 1}</strong> — <span class="round-winner">🏆 ${winner.name}: ${roundPoints}</span>`);
   showFunMessage();
+  saveGame();
   renderGame();
 }
 
@@ -718,6 +820,7 @@ function submitSkipBoRound() {
   winner.total += points;
   rounds.push(`<strong>Round ${rounds.length + 1}</strong> — <span class="round-winner">🏆 ${winner.name}: ${points}</span>`);
   showFunMessage();
+  saveGame();
   renderGame();
 }
 
@@ -761,6 +864,7 @@ function submitSpadesRound() {
 
   rounds.push(makeHighlightedRoundHistory(`Round ${rounds.length + 1}`, scores, false));
   showFunMessage();
+  saveGame();
   renderGame();
 }
 
@@ -816,8 +920,13 @@ function submitHeartsRound() {
   }
 
   showFunMessage();
+  saveGame();
   renderGame();
 }
+
+window.onload = function() {
+  updateSavedGameButton();
+};
 </script>
 
 </body>
