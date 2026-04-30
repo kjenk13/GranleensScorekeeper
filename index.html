@@ -51,9 +51,13 @@ button {
   padding: 6px 10px;
   font-size: 14px;
   border-radius: 10px;
-  margin: 0;
+  margin: 0 4px;
   min-width: 40px;
   width: auto;
+}
+
+.edit-btn {
+  background: #5893d4;
 }
 
 .top-back {
@@ -126,9 +130,14 @@ label {
   background:#fffaf5;
   padding:12px;
   border-radius:12px;
-  max-height:220px;
+  max-height:260px;
   overflow:auto;
   line-height: 1.6;
+}
+
+.round-item {
+  padding: 8px 0;
+  border-bottom: 1px solid #ead8cc;
 }
 
 .round-winner {
@@ -180,13 +189,24 @@ label {
   text-align: center;
 }
 
+.winner-note {
+  background: #fff0b8;
+  color: #6b5425;
+  padding: 14px;
+  border-radius: 16px;
+  text-align: center;
+  font-size: 22px;
+  font-weight: bold;
+  margin: 12px 0;
+}
+
 @media (max-width: 600px) {
   body { padding: 12px; }
   h1 { font-size: 26px; }
   .card { padding: 16px; }
   .game-grid { grid-template-columns: 1fr; }
   button { width: 100%; margin: 6px 0; }
-  .small-btn { width: auto; margin: 0; }
+  .small-btn { width: auto; margin: 2px; }
   .player-row { grid-template-columns: 1fr auto; }
 }
 </style>
@@ -246,6 +266,7 @@ label {
     <p id="gameHint" class="small"></p>
     <table class="scoreboard" id="scoreboard"></table>
     <div class="save-note">This game saves automatically ✅</div>
+    <div id="winnerMessage" class="winner-note hidden"></div>
     <div id="funMessage" class="fun-message hidden"></div>
   </div>
 
@@ -272,6 +293,7 @@ let rounds = [];
 let catanData = {};
 
 const STORAGE_PREFIX = "granleenSavedGame_";
+const notermannSequence = ["3","4","5","6","7","8","9","10","J","Q","K","A","2"];
 
 const gameNames = {
   notermann: "🎲 Notermann",
@@ -301,15 +323,12 @@ function storageKey(game) {
 
 function saveGame() {
   if (!selectedGame || players.length === 0) return;
-
-  const data = {
+  localStorage.setItem(storageKey(selectedGame), JSON.stringify({
     selectedGame,
     players,
     rounds,
     catanData
-  };
-
-  localStorage.setItem(storageKey(selectedGame), JSON.stringify(data));
+  }));
 }
 
 function loadGame(game) {
@@ -329,9 +348,7 @@ function loadGame(game) {
 }
 
 function clearCurrentGameSave() {
-  if (selectedGame) {
-    localStorage.removeItem(storageKey(selectedGame));
-  }
+  if (selectedGame) localStorage.removeItem(storageKey(selectedGame));
 }
 
 function showLoveNote() {
@@ -386,18 +403,35 @@ function addPlayerInput() {
   document.getElementById("playerInputs").appendChild(div);
 }
 
+function normalizedName(name) {
+  return name.trim().toLowerCase();
+}
+
+function hasDuplicateNames(names) {
+  const clean = names.map(normalizedName).filter(Boolean);
+  return new Set(clean).size !== clean.length;
+}
+
 function startGame() {
-  players = [];
+  const names = Array.from(document.querySelectorAll("#playerInputs input"))
+    .map(input => input.value.trim())
+    .filter(Boolean);
 
-  document.querySelectorAll("#playerInputs input").forEach((input, index) => {
-    const name = input.value.trim();
-    if (name) players.push({ id: index, name: name, total: 0 });
-  });
-
-  if (players.length < 1) {
-    alert("Please enter at least one player.");
+  if (names.length < 2) {
+    alert("Please enter at least 2 players.");
     return;
   }
+
+  if (hasDuplicateNames(names)) {
+    alert("Please use different names for each player.");
+    return;
+  }
+
+  players = names.map((name, index) => ({
+    id: index,
+    name,
+    total: 0
+  }));
 
   rounds = [];
   catanData = {};
@@ -420,8 +454,14 @@ function addPlayerMidGame() {
   const name = prompt("Enter the new player's name:");
   if (!name || !name.trim()) return;
 
-  const newId = players.length > 0 ? Math.max(...players.map(p => p.id)) + 1 : 0;
   const cleanName = name.trim();
+
+  if (players.some(p => normalizedName(p.name) === normalizedName(cleanName))) {
+    alert("That name is already being used.");
+    return;
+  }
+
+  const newId = players.length > 0 ? Math.max(...players.map(p => p.id)) + 1 : 0;
 
   players.push({
     id: newId,
@@ -439,32 +479,28 @@ function addPlayerMidGame() {
     };
   }
 
-  rounds.push(`➕ ${cleanName} joined the game`);
+  rounds.push({
+    type: "note",
+    text: `➕ ${cleanName} joined the game`
+  });
+
+  recomputeTotals();
   saveGame();
   renderGame();
 }
 
 function backToGames() {
   saveGame();
-
   document.getElementById("gameSelect").classList.remove("hidden");
   document.getElementById("playerSetup").classList.add("hidden");
   document.getElementById("gameArea").classList.add("hidden");
 }
 
 function newGame() {
-  const firstCheck = confirm("Start a new game? This will erase the saved scores for this game.");
-  if (!firstCheck) return;
-
-  const secondCheck = confirm("Yes, I want to start over.");
-  if (!secondCheck) return;
-
   clearCurrentGameSave();
-
   players = [];
   rounds = [];
   catanData = {};
-
   openPlayerSetup();
 }
 
@@ -490,6 +526,7 @@ function resetGame() {
 
   clearCurrentGameSave();
   document.getElementById("funMessage").classList.add("hidden");
+  document.getElementById("winnerMessage").classList.add("hidden");
   renderGame();
   saveGame();
 }
@@ -499,8 +536,10 @@ function isHighScoreGame() {
 }
 
 function renderGame() {
+  recomputeTotals();
   renderScoreboard();
   renderHistory();
+  renderWinnerMessage();
 
   if (selectedGame === "notermann") renderNotermann();
   if (selectedGame === "catan") renderCatan();
@@ -516,15 +555,29 @@ function renderGame() {
   saveGame();
 }
 
+function recomputeTotals() {
+  if (selectedGame === "catan") {
+    updateCatanTotals(false);
+    return;
+  }
+
+  players.forEach(p => p.total = 0);
+
+  rounds.forEach(round => {
+    if (!round.scores) return;
+    round.scores.forEach(scoreObj => {
+      const player = players.find(p => p.id === scoreObj.playerId);
+      if (player) player.total += scoreObj.score;
+    });
+  });
+}
+
 function renderScoreboard() {
   const table = document.getElementById("scoreboard");
   let sorted = [...players];
 
-  if (isHighScoreGame()) {
-    sorted.sort((a,b) => b.total - a.total);
-  } else {
-    sorted.sort((a,b) => a.total - b.total);
-  }
+  if (isHighScoreGame()) sorted.sort((a,b) => b.total - a.total);
+  else sorted.sort((a,b) => a.total - b.total);
 
   let html = "<tr><th>Player</th><th>Total</th></tr>";
 
@@ -542,24 +595,130 @@ function renderScoreboard() {
 
 function renderHistory() {
   const history = document.getElementById("history");
-  history.innerHTML = rounds.length ? rounds.join("<br>") : "No rounds yet.";
+
+  if (!rounds.length) {
+    history.innerHTML = "No rounds yet.";
+    return;
+  }
+
+  history.innerHTML = rounds.map((round, index) => {
+    if (typeof round === "string") {
+      return `<div class="round-item">${round}</div>`;
+    }
+
+    if (round.type === "note") {
+      return `<div class="round-item">${round.text}</div>`;
+    }
+
+    return `
+      <div class="round-item">
+        ${formatRound(round)}
+        <br>
+        <button class="edit-btn small-btn" onclick="editRound(${index})">Edit</button>
+      </div>
+    `;
+  }).join("");
 }
 
-function makeHighlightedRoundHistory(roundLabel, scores, lowScoreWins) {
+function formatRound(round) {
+  const scores = round.scores || [];
+  const lowScoreWins = round.lowScoreWins;
+
   const targetScore = lowScoreWins
     ? Math.min(...scores.map(s => s.score))
     : Math.max(...scores.map(s => s.score));
 
-  const winners = scores.filter(s => s.score === targetScore).map(s => s.name);
-
   const historyText = scores.map(s => {
-    if (winners.includes(s.name)) {
-      return `<span class="round-winner">🏆 ${s.name}: ${s.score}</span>`;
+    const player = players.find(p => p.id === s.playerId);
+    const name = player ? player.name : s.name;
+    if (s.score === targetScore) {
+      return `<span class="round-winner">🏆 ${name}: ${s.score}</span>`;
     }
-    return `${s.name}: ${s.score}`;
+    return `${name}: ${s.score}`;
   });
 
-  return `<strong>${roundLabel}</strong> — ${historyText.join(", ")}`;
+  return `${round.note ? round.note + " " : ""}<strong>${round.label}</strong> — ${historyText.join(", ")}`;
+}
+
+function editRound(index) {
+  const round = rounds[index];
+  if (!round || !round.scores) return;
+
+  round.scores.forEach(scoreObj => {
+    const player = players.find(p => p.id === scoreObj.playerId);
+    const name = player ? player.name : scoreObj.name;
+
+    let updated = prompt(`Edit ${name}'s score for ${round.label}:`, scoreObj.score);
+
+    if (updated === null) return;
+
+    updated = updated.trim();
+
+    if (!isWholeNumber(updated)) {
+      alert("Scores must be whole numbers only.");
+      return;
+    }
+
+    scoreObj.score = Number(updated);
+  });
+
+  recomputeTotals();
+  saveGame();
+  renderGame();
+}
+
+function renderWinnerMessage() {
+  const box = document.getElementById("winnerMessage");
+  box.classList.add("hidden");
+  box.innerHTML = "";
+
+  if (selectedGame === "notermann" && getNotermannRoundCount() >= notermannSequence.length) {
+    const sorted = [...players].sort((a,b) => a.total - b.total);
+    const winner = sorted[0];
+    box.innerHTML = `🏆 Winner: ${winner.name}!`;
+    box.classList.remove("hidden");
+  }
+}
+
+function isWholeNumber(value) {
+  return /^-?\d+$/.test(String(value).trim());
+}
+
+function validateRequiredScores(ids) {
+  for (const id of ids) {
+    const input = document.getElementById(id);
+    if (!input) continue;
+
+    const value = input.value.trim();
+
+    if (value === "") {
+      alert("Please enter a score for every player. Use 0 if they scored zero.");
+      input.focus();
+      return false;
+    }
+
+    if (!isWholeNumber(value)) {
+      alert("Scores must be whole numbers only. No decimals.");
+      input.focus();
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function makeRound(label, scores, lowScoreWins, note = "") {
+  return {
+    type: "round",
+    label,
+    scores,
+    lowScoreWins,
+    note
+  };
+}
+
+function getNotermannRoundCount() {
+  return rounds.filter(r => r && r.type === "round" && r.game === "notermann").length;
 }
 
 /* CATAN */
@@ -586,13 +745,13 @@ function renderCatan() {
         <h3>${p.name}</h3>
 
         <label>Settlements</label>
-        <input type="number" placeholder="0" value="${d.settlements}" onfocus="this.select()" onchange="setCatan(${p.id}, 'settlements', this.value)">
+        <input type="number" step="1" inputmode="numeric" placeholder="0" value="${d.settlements}" onfocus="this.select()" onchange="setCatan(${p.id}, 'settlements', this.value)">
 
         <label>Cities</label>
-        <input type="number" placeholder="0" value="${d.cities}" onfocus="this.select()" onchange="setCatan(${p.id}, 'cities', this.value)">
+        <input type="number" step="1" inputmode="numeric" placeholder="0" value="${d.cities}" onfocus="this.select()" onchange="setCatan(${p.id}, 'cities', this.value)">
 
         <label>Victory Point Cards</label>
-        <input type="number" placeholder="0" value="${d.vpCards}" onfocus="this.select()" onchange="setCatan(${p.id}, 'vpCards', this.value)">
+        <input type="number" step="1" inputmode="numeric" placeholder="0" value="${d.vpCards}" onfocus="this.select()" onchange="setCatan(${p.id}, 'vpCards', this.value)">
 
         <button class="${d.longestRoad ? 'good' : 'secondary'}" onclick="toggleExclusiveCatan(${p.id}, 'longestRoad')">Longest Road</button>
         <button class="${d.largestArmy ? 'good' : 'secondary'}" onclick="toggleExclusiveCatan(${p.id}, 'largestArmy')">Largest Army</button>
@@ -605,6 +764,12 @@ function renderCatan() {
 }
 
 function setCatan(playerId, key, value) {
+  if (!isWholeNumber(value)) {
+    alert("Please enter a whole number only.");
+    renderGame();
+    return;
+  }
+
   catanData[playerId][key] = Math.max(0, Number(value || 0));
   updateCatanTotals();
   saveGame();
@@ -613,23 +778,26 @@ function setCatan(playerId, key, value) {
 
 function toggleExclusiveCatan(playerId, key) {
   const currentlyOn = catanData[playerId][key];
+
   players.forEach(p => {
     if (!catanData[p.id]) return;
     catanData[p.id][key] = false;
   });
+
   catanData[playerId][key] = !currentlyOn;
   updateCatanTotals();
   saveGame();
   renderGame();
 }
 
-function updateCatanTotals() {
+function updateCatanTotals(render = true) {
   players.forEach(p => {
     const d = catanData[p.id];
     if (!d) return;
     p.total = d.settlements + (d.cities * 2) + d.vpCards + (d.longestRoad ? 2 : 0) + (d.largestArmy ? 2 : 0);
   });
-  renderScoreboard();
+
+  if (render) renderScoreboard();
 }
 
 /* SIMPLE LOW SCORE GAMES */
@@ -643,7 +811,7 @@ function renderSimpleLowScoreGame() {
 
   document.getElementById("gameHint").innerText = hints[selectedGame];
 
-  let html = `<h3>Add Round ${rounds.length + 1}</h3>`;
+  let html = `<h3>Add Round ${rounds.filter(r => r.type === "round").length + 1}</h3>`;
 
   if (selectedGame === "skyjo") {
     html += `
@@ -658,7 +826,7 @@ function renderSimpleLowScoreGame() {
   players.forEach(p => {
     html += `
       <label>${p.name}'s score</label>
-      <input id="score_${p.id}" type="number" placeholder="0" onfocus="this.select()">
+      <input id="score_${p.id}" type="number" step="1" inputmode="numeric" placeholder="Required" onfocus="this.select()">
     `;
   });
 
@@ -667,13 +835,15 @@ function renderSimpleLowScoreGame() {
 }
 
 function submitSimpleLowScoreRound() {
-  let scores = [];
+  const ids = players.map(p => "score_" + p.id);
+  if (!validateRequiredScores(ids)) return;
+
   let scoreMap = {};
   let lowest = Infinity;
   let note = "";
 
   players.forEach(p => {
-    const val = Number(document.getElementById("score_" + p.id).value || 0);
+    const val = Number(document.getElementById("score_" + p.id).value);
     scoreMap[p.id] = val;
     if (val < lowest) lowest = val;
   });
@@ -682,17 +852,23 @@ function submitSimpleLowScoreRound() {
     const ender = document.getElementById("skyjoEnder").value;
     if (ender !== "" && scoreMap[ender] > lowest) {
       scoreMap[ender] *= 2;
-      note = `${players.find(p => p.id == ender).name}'s score doubled. `;
+      note = `${players.find(p => p.id == ender).name}'s score doubled.`;
     }
   }
 
-  players.forEach(p => {
-    p.total += scoreMap[p.id];
-    scores.push({ name: p.name, score: scoreMap[p.id] });
-  });
+  const scores = players.map(p => ({
+    playerId: p.id,
+    name: p.name,
+    score: scoreMap[p.id]
+  }));
 
-  rounds.push(note + makeHighlightedRoundHistory(`Round ${rounds.length + 1}`, scores, true));
+  const label = `Round ${rounds.filter(r => r.type === "round").length + 1}`;
+  const round = makeRound(label, scores, true, note);
+  round.game = selectedGame;
+
+  rounds.push(round);
   showFunMessage();
+  recomputeTotals();
   saveGame();
   renderGame();
 }
@@ -700,17 +876,25 @@ function submitSimpleLowScoreRound() {
 /* NOTERMANN */
 
 function renderNotermann() {
-  const cardsHeld = rounds.filter(r => !r.includes("joined the game")).length + 3;
+  const roundCount = getNotermannRoundCount();
+
+  if (roundCount >= notermannSequence.length) {
+    document.getElementById("gameHint").innerText = "Notermann is complete. The lowest total wins.";
+    document.getElementById("scoringArea").innerHTML = `<h3>Game Complete 🎉</h3>`;
+    return;
+  }
+
+  const wild = notermannSequence[roundCount];
 
   document.getElementById("gameHint").innerText =
     "Notermann: the number shown is wild for that round. Lowest round score is highlighted.";
 
-  let html = `<h3>${cardsHeld} is Wild</h3>`;
+  let html = `<h3>${wild} is Wild</h3>`;
 
   players.forEach(p => {
     html += `
       <label>${p.name}'s score</label>
-      <input id="notermann_${p.id}" type="number" placeholder="0" onfocus="this.select()">
+      <input id="notermann_${p.id}" type="number" step="1" inputmode="numeric" placeholder="Required" onfocus="this.select()">
     `;
   });
 
@@ -719,17 +903,26 @@ function renderNotermann() {
 }
 
 function submitNotermannRound() {
-  const cardsHeld = rounds.filter(r => !r.includes("joined the game")).length + 3;
-  let scores = [];
+  const ids = players.map(p => "notermann_" + p.id);
+  if (!validateRequiredScores(ids)) return;
 
-  players.forEach(p => {
-    const score = Number(document.getElementById("notermann_" + p.id).value || 0);
-    p.total += score;
-    scores.push({ name: p.name, score: score });
-  });
+  const roundCount = getNotermannRoundCount();
+  if (roundCount >= notermannSequence.length) return;
 
-  rounds.push(makeHighlightedRoundHistory(cardsHeld, scores, true));
+  const wild = notermannSequence[roundCount];
+
+  const scores = players.map(p => ({
+    playerId: p.id,
+    name: p.name,
+    score: Number(document.getElementById("notermann_" + p.id).value)
+  }));
+
+  const round = makeRound(wild, scores, true);
+  round.game = "notermann";
+
+  rounds.push(round);
   showFunMessage();
+  recomputeTotals();
   saveGame();
   renderGame();
 }
@@ -741,14 +934,14 @@ function renderPhase10() {
     "Phase 10: enter each player's penalty points left in hand. Lowest round score is highlighted.";
 
   let html = `
-    <h3>Add Round ${rounds.length + 1}</h3>
-    <p class="small">Common values: number cards = face value, Skip = 15, Wild = 25.</p>
+    <h3>Add Round ${rounds.filter(r => r.type === "round").length + 1}</h3>
+    <p class="small">Common values: 1-9 = 5 points, 10-12 = 10 points, Skip = 15, Wild = 25.</p>
   `;
 
   players.forEach(p => {
     html += `
       <label>${p.name}'s penalty score</label>
-      <input id="phase10_${p.id}" type="number" placeholder="0" onfocus="this.select()">
+      <input id="phase10_${p.id}" type="number" step="1" inputmode="numeric" placeholder="Required" onfocus="this.select()">
     `;
   });
 
@@ -757,16 +950,22 @@ function renderPhase10() {
 }
 
 function submitPhase10Round() {
-  let scores = [];
+  const ids = players.map(p => "phase10_" + p.id);
+  if (!validateRequiredScores(ids)) return;
 
-  players.forEach(p => {
-    const score = Number(document.getElementById("phase10_" + p.id).value || 0);
-    p.total += score;
-    scores.push({ name: p.name, score: score });
-  });
+  const scores = players.map(p => ({
+    playerId: p.id,
+    name: p.name,
+    score: Number(document.getElementById("phase10_" + p.id).value)
+  }));
 
-  rounds.push(makeHighlightedRoundHistory(`Round ${rounds.length + 1}`, scores, true));
+  const label = `Round ${rounds.filter(r => r.type === "round").length + 1}`;
+  const round = makeRound(label, scores, true);
+  round.game = "phase10";
+
+  rounds.push(round);
   showFunMessage();
+  recomputeTotals();
   saveGame();
   renderGame();
 }
@@ -778,7 +977,7 @@ function renderUno() {
     "Uno: choose the round winner, then enter the value of everyone else's remaining cards. Winner receives those points.";
 
   let html = `
-    <h3>Add Round ${rounds.length + 1}</h3>
+    <h3>Add Round ${rounds.filter(r => r.type === "round").length + 1}</h3>
 
     <label>Round winner</label>
     <select id="unoWinner">
@@ -791,7 +990,7 @@ function renderUno() {
   players.forEach(p => {
     html += `
       <label>${p.name}'s remaining card total</label>
-      <input id="uno_${p.id}" type="number" placeholder="0" onfocus="this.select()">
+      <input id="uno_${p.id}" type="number" step="1" inputmode="numeric" placeholder="Required" onfocus="this.select()">
     `;
   });
 
@@ -800,20 +999,34 @@ function renderUno() {
 }
 
 function submitUnoRound() {
+  const ids = players.map(p => "uno_" + p.id);
+  if (!validateRequiredScores(ids)) return;
+
   const winnerId = Number(document.getElementById("unoWinner").value);
   let roundPoints = 0;
 
   players.forEach(p => {
     if (p.id !== winnerId) {
-      roundPoints += Number(document.getElementById("uno_" + p.id).value || 0);
+      roundPoints += Number(document.getElementById("uno_" + p.id).value);
     }
   });
 
   const winner = players.find(p => p.id === winnerId);
-  winner.total += roundPoints;
 
-  rounds.push(`<strong>Round ${rounds.length + 1}</strong> — <span class="round-winner">🏆 ${winner.name}: ${roundPoints}</span>`);
+  const scores = players.map(p => ({
+    playerId: p.id,
+    name: p.name,
+    score: p.id === winnerId ? roundPoints : 0
+  }));
+
+  const label = `Round ${rounds.filter(r => r.type === "round").length + 1}`;
+  const round = makeRound(label, scores, false);
+  round.game = "uno";
+  round.note = `${winner.name} won.`;
+
+  rounds.push(round);
   showFunMessage();
+  recomputeTotals();
   saveGame();
   renderGame();
 }
@@ -825,7 +1038,7 @@ function renderSkipBo() {
     "Skip-Bo: choose the round winner and enter points earned. Highest total wins.";
 
   let html = `
-    <h3>Add Round ${rounds.length + 1}</h3>
+    <h3>Add Round ${rounds.filter(r => r.type === "round").length + 1}</h3>
 
     <label>Round winner</label>
     <select id="skipboWinner">
@@ -833,7 +1046,7 @@ function renderSkipBo() {
     </select>
 
     <label>Winner's points this round</label>
-    <input id="skipboPoints" type="number" placeholder="25" onfocus="this.select()">
+    <input id="skipboPoints" type="number" step="1" inputmode="numeric" placeholder="Required" onfocus="this.select()">
 
     <button class="good" onclick="submitSkipBoRound()">Add Round</button>
   `;
@@ -842,13 +1055,26 @@ function renderSkipBo() {
 }
 
 function submitSkipBoRound() {
+  if (!validateRequiredScores(["skipboPoints"])) return;
+
   const winnerId = Number(document.getElementById("skipboWinner").value);
-  const points = Number(document.getElementById("skipboPoints").value || 25);
+  const points = Number(document.getElementById("skipboPoints").value);
   const winner = players.find(p => p.id === winnerId);
 
-  winner.total += points;
-  rounds.push(`<strong>Round ${rounds.length + 1}</strong> — <span class="round-winner">🏆 ${winner.name}: ${points}</span>`);
+  const scores = players.map(p => ({
+    playerId: p.id,
+    name: p.name,
+    score: p.id === winnerId ? points : 0
+  }));
+
+  const label = `Round ${rounds.filter(r => r.type === "round").length + 1}`;
+  const round = makeRound(label, scores, false);
+  round.game = "skipbo";
+  round.note = `${winner.name} won.`;
+
+  rounds.push(round);
   showFunMessage();
+  recomputeTotals();
   saveGame();
   renderGame();
 }
@@ -859,7 +1085,7 @@ function renderSpades() {
   document.getElementById("gameHint").innerText =
     "Spades: enter bid and tricks taken. Highest round score is highlighted.";
 
-  let html = `<h3>Add Round ${rounds.length + 1}</h3>`;
+  let html = `<h3>Add Round ${rounds.filter(r => r.type === "round").length + 1}</h3>`;
 
   players.forEach(p => {
     html += `
@@ -867,10 +1093,10 @@ function renderSpades() {
         <h3>${p.name}</h3>
 
         <label>Bid</label>
-        <input id="spades_bid_${p.id}" type="number" placeholder="0" onfocus="this.select()">
+        <input id="spades_bid_${p.id}" type="number" step="1" inputmode="numeric" placeholder="Required" onfocus="this.select()">
 
         <label>Tricks Taken</label>
-        <input id="spades_tricks_${p.id}" type="number" placeholder="0" onfocus="this.select()">
+        <input id="spades_tricks_${p.id}" type="number" step="1" inputmode="numeric" placeholder="Required" onfocus="this.select()">
       </div>
     `;
   });
@@ -880,19 +1106,33 @@ function renderSpades() {
 }
 
 function submitSpadesRound() {
-  let scores = [];
-
+  const ids = [];
   players.forEach(p => {
-    const bid = Number(document.getElementById("spades_bid_" + p.id).value || 0);
-    const tricks = Number(document.getElementById("spades_tricks_" + p.id).value || 0);
-    const score = tricks >= bid ? (bid * 10) + (tricks - bid) : bid * -10;
-
-    p.total += score;
-    scores.push({ name: p.name, score: score });
+    ids.push("spades_bid_" + p.id);
+    ids.push("spades_tricks_" + p.id);
   });
 
-  rounds.push(makeHighlightedRoundHistory(`Round ${rounds.length + 1}`, scores, false));
+  if (!validateRequiredScores(ids)) return;
+
+  const scores = players.map(p => {
+    const bid = Number(document.getElementById("spades_bid_" + p.id).value);
+    const tricks = Number(document.getElementById("spades_tricks_" + p.id).value);
+    const score = tricks >= bid ? (bid * 10) + (tricks - bid) : bid * -10;
+
+    return {
+      playerId: p.id,
+      name: p.name,
+      score
+    };
+  });
+
+  const label = `Round ${rounds.filter(r => r.type === "round").length + 1}`;
+  const round = makeRound(label, scores, false);
+  round.game = "spades";
+
+  rounds.push(round);
   showFunMessage();
+  recomputeTotals();
   saveGame();
   renderGame();
 }
@@ -904,7 +1144,7 @@ function renderHearts() {
     "Hearts: enter penalty points. Lowest round score is highlighted. Optional shoot-the-moon gives everyone else 26 points.";
 
   let html = `
-    <h3>Add Round ${rounds.length + 1}</h3>
+    <h3>Add Round ${rounds.filter(r => r.type === "round").length + 1}</h3>
 
     <label>Did someone shoot the moon?</label>
     <select id="moonShooter">
@@ -916,7 +1156,7 @@ function renderHearts() {
   players.forEach(p => {
     html += `
       <label>${p.name}'s penalty points</label>
-      <input id="hearts_${p.id}" type="number" placeholder="0" onfocus="this.select()">
+      <input id="hearts_${p.id}" type="number" step="1" inputmode="numeric" placeholder="Required" onfocus="this.select()">
     `;
   });
 
@@ -926,29 +1166,37 @@ function renderHearts() {
 
 function submitHeartsRound() {
   const shooter = document.getElementById("moonShooter").value;
+  const ids = players.map(p => "hearts_" + p.id);
+
+  if (shooter === "" && !validateRequiredScores(ids)) return;
+
   let scores = [];
+  let note = "";
 
   if (shooter !== "") {
     const shooterName = players.find(p => p.id == shooter).name;
+    note = `${shooterName} shot the moon!`;
 
-    players.forEach(p => {
-      const score = p.id == shooter ? 0 : 26;
-      p.total += score;
-      scores.push({ name: p.name, score: score });
-    });
-
-    rounds.push(`<strong>Round ${rounds.length + 1}</strong> — ${shooterName} shot the moon! ` + makeHighlightedRoundHistory("", scores, true).replace("<strong></strong> — ", ""));
+    scores = players.map(p => ({
+      playerId: p.id,
+      name: p.name,
+      score: p.id == shooter ? 0 : 26
+    }));
   } else {
-    players.forEach(p => {
-      const score = Number(document.getElementById("hearts_" + p.id).value || 0);
-      p.total += score;
-      scores.push({ name: p.name, score: score });
-    });
-
-    rounds.push(makeHighlightedRoundHistory(`Round ${rounds.length + 1}`, scores, true));
+    scores = players.map(p => ({
+      playerId: p.id,
+      name: p.name,
+      score: Number(document.getElementById("hearts_" + p.id).value)
+    }));
   }
 
+  const label = `Round ${rounds.filter(r => r.type === "round").length + 1}`;
+  const round = makeRound(label, scores, true, note);
+  round.game = "hearts";
+
+  rounds.push(round);
   showFunMessage();
+  recomputeTotals();
   saveGame();
   renderGame();
 }
