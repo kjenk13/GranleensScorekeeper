@@ -56,9 +56,7 @@ button {
   width: auto;
 }
 
-.edit-btn {
-  background: #5893d4;
-}
+.edit-btn { background: #5893d4; }
 
 .top-back {
   text-align: left;
@@ -200,6 +198,19 @@ label {
   margin: 12px 0;
 }
 
+.graph-wrap {
+  overflow-x: auto;
+  background: #fffaf5;
+  border-radius: 16px;
+  padding: 10px;
+}
+
+.graph-label {
+  font-size: 15px;
+  margin-top: 10px;
+  text-align: center;
+}
+
 @media (max-width: 600px) {
   body { padding: 12px; }
   h1 { font-size: 26px; }
@@ -277,8 +288,14 @@ label {
     <div id="history" class="round-history">No rounds yet.</div>
   </div>
 
+  <div id="graphCard" class="card hidden">
+    <h3>📈 Final Score Over Time</h3>
+    <div id="scoreGraph"></div>
+  </div>
+
   <div class="card" style="text-align:center;">
     <button class="secondary" onclick="addPlayerMidGame()">Add Player</button>
+    <button class="good" onclick="endGame()">End Game</button>
     <button class="danger" onclick="newGame()">New Game</button>
     <button class="danger" onclick="resetGame()">Reset This Game</button>
   </div>
@@ -291,6 +308,7 @@ let selectedGame = "";
 let players = [];
 let rounds = [];
 let catanData = {};
+let gameEnded = false;
 
 const STORAGE_PREFIX = "granleenSavedGame_";
 const notermannSequence = ["3","4","5","6","7","8","9","10","J","Q","K","A","2"];
@@ -327,7 +345,8 @@ function saveGame() {
     selectedGame,
     players,
     rounds,
-    catanData
+    catanData,
+    gameEnded
   }));
 }
 
@@ -341,6 +360,7 @@ function loadGame(game) {
     players = data.players || [];
     rounds = data.rounds || [];
     catanData = data.catanData || {};
+    gameEnded = data.gameEnded || false;
     return players.length > 0;
   } catch (e) {
     return false;
@@ -369,6 +389,7 @@ function chooseGame(game) {
     players = [];
     rounds = [];
     catanData = {};
+    gameEnded = false;
     openPlayerSetup();
   }
 }
@@ -435,6 +456,7 @@ function startGame() {
 
   rounds = [];
   catanData = {};
+  gameEnded = false;
 
   players.forEach(p => {
     catanData[p.id] = {
@@ -501,6 +523,7 @@ function newGame() {
   players = [];
   rounds = [];
   catanData = {};
+  gameEnded = false;
   openPlayerSetup();
 }
 
@@ -513,6 +536,7 @@ function resetGame() {
 
   players.forEach(p => p.total = 0);
   rounds = [];
+  gameEnded = false;
 
   players.forEach(p => {
     catanData[p.id] = {
@@ -531,6 +555,12 @@ function resetGame() {
   saveGame();
 }
 
+function endGame() {
+  gameEnded = true;
+  saveGame();
+  renderGame();
+}
+
 function isHighScoreGame() {
   return selectedGame === "catan" || selectedGame === "uno" || selectedGame === "skipbo" || selectedGame === "spades";
 }
@@ -539,6 +569,11 @@ function renderGame() {
   recomputeTotals();
   renderScoreboard();
   renderHistory();
+
+  if (selectedGame === "notermann" && getNotermannRoundCount() >= notermannSequence.length) {
+    gameEnded = true;
+  }
+
   renderWinnerMessage();
 
   if (selectedGame === "notermann") renderNotermann();
@@ -552,6 +587,7 @@ function renderGame() {
   if (selectedGame === "spades") renderSpades();
   if (selectedGame === "hearts") renderHearts();
 
+  renderScoreGraph();
   saveGame();
 }
 
@@ -649,7 +685,6 @@ function editRound(index) {
     const name = player ? player.name : scoreObj.name;
 
     let updated = prompt(`Edit ${name}'s score for ${round.label}:`, scoreObj.score);
-
     if (updated === null) return;
 
     updated = updated.trim();
@@ -672,12 +707,118 @@ function renderWinnerMessage() {
   box.classList.add("hidden");
   box.innerHTML = "";
 
-  if (selectedGame === "notermann" && getNotermannRoundCount() >= notermannSequence.length) {
-    const sorted = [...players].sort((a,b) => a.total - b.total);
-    const winner = sorted[0];
+  if (!gameEnded) return;
+
+  const sorted = [...players].sort((a,b) => {
+    if (isHighScoreGame()) return b.total - a.total;
+    return a.total - b.total;
+  });
+
+  const winner = sorted[0];
+
+  if (winner) {
     box.innerHTML = `🏆 Winner: ${winner.name}!`;
     box.classList.remove("hidden");
   }
+}
+
+function buildScoreTimeline() {
+  const timeline = {};
+  players.forEach(p => {
+    timeline[p.id] = [0];
+  });
+
+  rounds.forEach(round => {
+    if (!round.scores) return;
+
+    players.forEach(p => {
+      const lastTotal = timeline[p.id][timeline[p.id].length - 1];
+      const scoreObj = round.scores.find(s => s.playerId === p.id);
+      const added = scoreObj ? scoreObj.score : 0;
+      timeline[p.id].push(lastTotal + added);
+    });
+  });
+
+  return timeline;
+}
+
+function renderScoreGraph() {
+  const graphCard = document.getElementById("graphCard");
+  const graphBox = document.getElementById("scoreGraph");
+
+  if (!gameEnded) {
+    graphCard.classList.add("hidden");
+    graphBox.innerHTML = "";
+    return;
+  }
+
+  const timeline = buildScoreTimeline();
+  const values = Object.values(timeline);
+
+  if (!values.length || values.every(arr => arr.length <= 1)) {
+    graphCard.classList.add("hidden");
+    graphBox.innerHTML = "";
+    return;
+  }
+
+  const roundCount = Math.max(...values.map(arr => arr.length));
+  const allScores = values.flat();
+
+  const maxScore = Math.max(...allScores, 1);
+  const minScore = Math.min(...allScores, 0);
+
+  const width = Math.max(360, roundCount * 70);
+  const height = 300;
+  const padding = 42;
+
+  function x(index) {
+    return padding + (index * ((width - padding * 2) / Math.max(roundCount - 1, 1)));
+  }
+
+  function y(score) {
+    if (maxScore === minScore) return height / 2;
+    return height - padding - ((score - minScore) * ((height - padding * 2) / (maxScore - minScore)));
+  }
+
+  const colors = [
+    "#9a78c9", "#d9844c", "#55a7b0", "#79a96b", "#d85454",
+    "#e09a3e", "#5893d4", "#5e5b7f", "#d96d8b", "#71a66a"
+  ];
+
+  let svg = `
+    <div class="graph-wrap">
+    <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+      <line x1="${padding}" y1="${height-padding}" x2="${width-padding}" y2="${height-padding}" stroke="#c9b7a9" stroke-width="2"/>
+      <line x1="${padding}" y1="${padding}" x2="${padding}" y2="${height-padding}" stroke="#c9b7a9" stroke-width="2"/>
+      <text x="${padding}" y="${height - 10}" font-size="12" fill="#6f6258">Start</text>
+      <text x="${width - padding - 30}" y="${height - 10}" font-size="12" fill="#6f6258">End</text>
+  `;
+
+  players.forEach((p, playerIndex) => {
+    const playerLine = timeline[p.id] || [0];
+    const points = playerLine.map((score, index) => `${x(index)},${y(score)}`).join(" ");
+    const color = colors[playerIndex % colors.length];
+
+    svg += `
+      <polyline points="${points}" fill="none" stroke="${color}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    `;
+
+    playerLine.forEach((score, index) => {
+      svg += `<circle cx="${x(index)}" cy="${y(score)}" r="5" fill="${color}"></circle>`;
+    });
+  });
+
+  svg += `</svg></div>`;
+
+  svg += `<div class="graph-label">`;
+  players.forEach((p, index) => {
+    const color = colors[index % colors.length];
+    svg += `<div style="color:${color}; font-weight:bold;">● ${p.name}</div>`;
+  });
+  svg += `</div>`;
+
+  graphBox.innerHTML = svg;
+  graphCard.classList.remove("hidden");
 }
 
 function isWholeNumber(value) {
@@ -921,6 +1062,11 @@ function submitNotermannRound() {
   round.game = "notermann";
 
   rounds.push(round);
+
+  if (getNotermannRoundCount() >= notermannSequence.length) {
+    gameEnded = true;
+  }
+
   showFunMessage();
   recomputeTotals();
   saveGame();
