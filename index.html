@@ -791,7 +791,14 @@ function renderScoreGraph() {
     .map(s => `${s.name}: ${s.score}`)
     .join(" &nbsp; | &nbsp; ");
 
-  const roundCount = Math.max(...values.map(arr => arr.length));
+  const roundLabels = ["Start"];
+  rounds.forEach(round => {
+    if (round && round.type === "round") {
+      roundLabels.push(round.label);
+    }
+  });
+
+  const roundCount = roundLabels.length;
   const allScores = values.flat();
 
   let maxScore = Math.max(...allScores);
@@ -807,12 +814,12 @@ function renderScoreGraph() {
   maxScore += paddingAmount;
   minScore -= paddingAmount;
 
-  const width = 360;
-  const height = 260;
+  const width = 390;
+  const height = 270;
   const leftPad = 55;
-  const rightPad = 20;
+  const rightPad = 25;
   const topPad = 25;
-  const bottomPad = 55;
+  const bottomPad = 60;
 
   function x(index) {
     return leftPad + (index * ((width - leftPad - rightPad) / Math.max(roundCount - 1, 1)));
@@ -840,13 +847,13 @@ function renderScoreGraph() {
       <text x="${leftPad - 8}" y="${y(minScore + paddingAmount) + 4}" text-anchor="end" font-size="11" fill="#6f6258">${Math.round(minScore + paddingAmount)}</text>
   `;
 
-  for (let i = 0; i < roundCount; i++) {
+  roundLabels.forEach((label, i) => {
     svg += `
-      <text x="${x(i)}" y="${height-bottomPad+20}" text-anchor="middle" font-size="11" fill="#6f6258">
-        ${i === 0 ? "Start" : i}
+      <text x="${x(i)}" y="${height-bottomPad+20}" text-anchor="middle" font-size="10" fill="#6f6258">
+        ${label}
       </text>
     `;
-  }
+  });
 
   players.forEach((p, playerIndex) => {
     const playerLine = timeline[p.id] || [0];
