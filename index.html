@@ -211,6 +211,20 @@ label {
   text-align: center;
 }
 
+.final-scores-summary {
+  text-align: center;
+  font-size: 18px;
+  font-weight: bold;
+  margin-bottom: 12px;
+  color: #3b3028;
+}
+
+.axis-label {
+  font-size: 13px;
+  fill: #6f6258;
+  font-weight: bold;
+}
+
 @media (max-width: 600px) {
   body { padding: 12px; }
   h1 { font-size: 26px; }
@@ -290,6 +304,7 @@ label {
 
   <div id="graphCard" class="card hidden">
     <h3>📈 Final Score Over Time</h3>
+    <div id="finalScoresSummary" class="final-scores-summary"></div>
     <div id="scoreGraph"></div>
   </div>
 
@@ -524,7 +539,10 @@ function newGame() {
   rounds = [];
   catanData = {};
   gameEnded = false;
-  openPlayerSetup();
+
+  document.getElementById("gameSelect").classList.remove("hidden");
+  document.getElementById("playerSetup").classList.add("hidden");
+  document.getElementById("gameArea").classList.add("hidden");
 }
 
 function resetGame() {
@@ -745,10 +763,12 @@ function buildScoreTimeline() {
 function renderScoreGraph() {
   const graphCard = document.getElementById("graphCard");
   const graphBox = document.getElementById("scoreGraph");
+  const summaryBox = document.getElementById("finalScoresSummary");
 
   if (!gameEnded) {
     graphCard.classList.add("hidden");
     graphBox.innerHTML = "";
+    summaryBox.innerHTML = "";
     return;
   }
 
@@ -758,26 +778,48 @@ function renderScoreGraph() {
   if (!values.length || values.every(arr => arr.length <= 1)) {
     graphCard.classList.add("hidden");
     graphBox.innerHTML = "";
+    summaryBox.innerHTML = "";
     return;
   }
+
+  const finalScores = players.map(p => {
+    const arr = timeline[p.id] || [0];
+    return { name: p.name, score: arr[arr.length - 1] };
+  });
+
+  summaryBox.innerHTML = finalScores
+    .map(s => `${s.name}: ${s.score}`)
+    .join(" &nbsp; | &nbsp; ");
 
   const roundCount = Math.max(...values.map(arr => arr.length));
   const allScores = values.flat();
 
-  const maxScore = Math.max(...allScores, 1);
-  const minScore = Math.min(...allScores, 0);
+  let maxScore = Math.max(...allScores);
+  let minScore = Math.min(...allScores);
 
-  const width = Math.max(360, roundCount * 70);
-  const height = 300;
-  const padding = 42;
+  if (maxScore === minScore) {
+    maxScore += 10;
+    minScore -= 10;
+  }
+
+  const scoreRange = maxScore - minScore;
+  const paddingAmount = Math.max(5, scoreRange * 0.12);
+  maxScore += paddingAmount;
+  minScore -= paddingAmount;
+
+  const width = 360;
+  const height = 260;
+  const leftPad = 55;
+  const rightPad = 20;
+  const topPad = 25;
+  const bottomPad = 55;
 
   function x(index) {
-    return padding + (index * ((width - padding * 2) / Math.max(roundCount - 1, 1)));
+    return leftPad + (index * ((width - leftPad - rightPad) / Math.max(roundCount - 1, 1)));
   }
 
   function y(score) {
-    if (maxScore === minScore) return height / 2;
-    return height - padding - ((score - minScore) * ((height - padding * 2) / (maxScore - minScore)));
+    return height - bottomPad - ((score - minScore) * ((height - topPad - bottomPad) / (maxScore - minScore)));
   }
 
   const colors = [
@@ -787,12 +829,24 @@ function renderScoreGraph() {
 
   let svg = `
     <div class="graph-wrap">
-    <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-      <line x1="${padding}" y1="${height-padding}" x2="${width-padding}" y2="${height-padding}" stroke="#c9b7a9" stroke-width="2"/>
-      <line x1="${padding}" y1="${padding}" x2="${padding}" y2="${height-padding}" stroke="#c9b7a9" stroke-width="2"/>
-      <text x="${padding}" y="${height - 10}" font-size="12" fill="#6f6258">Start</text>
-      <text x="${width - padding - 30}" y="${height - 10}" font-size="12" fill="#6f6258">End</text>
+    <svg width="100%" height="${height}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet">
+      <line x1="${leftPad}" y1="${height-bottomPad}" x2="${width-rightPad}" y2="${height-bottomPad}" stroke="#c9b7a9" stroke-width="2"/>
+      <line x1="${leftPad}" y1="${topPad}" x2="${leftPad}" y2="${height-bottomPad}" stroke="#c9b7a9" stroke-width="2"/>
+
+      <text x="${width / 2}" y="${height - 12}" text-anchor="middle" class="axis-label">Rounds</text>
+      <text x="15" y="${height / 2}" text-anchor="middle" class="axis-label" transform="rotate(-90 15 ${height / 2})">Total Score</text>
+
+      <text x="${leftPad - 8}" y="${y(maxScore - paddingAmount) + 4}" text-anchor="end" font-size="11" fill="#6f6258">${Math.round(maxScore - paddingAmount)}</text>
+      <text x="${leftPad - 8}" y="${y(minScore + paddingAmount) + 4}" text-anchor="end" font-size="11" fill="#6f6258">${Math.round(minScore + paddingAmount)}</text>
   `;
+
+  for (let i = 0; i < roundCount; i++) {
+    svg += `
+      <text x="${x(i)}" y="${height-bottomPad+20}" text-anchor="middle" font-size="11" fill="#6f6258">
+        ${i === 0 ? "Start" : i}
+      </text>
+    `;
+  }
 
   players.forEach((p, playerIndex) => {
     const playerLine = timeline[p.id] || [0];
@@ -806,6 +860,13 @@ function renderScoreGraph() {
     playerLine.forEach((score, index) => {
       svg += `<circle cx="${x(index)}" cy="${y(score)}" r="5" fill="${color}"></circle>`;
     });
+
+    const lastScore = playerLine[playerLine.length - 1];
+    svg += `
+      <text x="${x(playerLine.length - 1) - 6}" y="${y(lastScore) - 8}" text-anchor="end" font-size="12" fill="${color}" font-weight="bold">
+        ${lastScore}
+      </text>
+    `;
   });
 
   svg += `</svg></div>`;
