@@ -90,6 +90,9 @@ button {
 .game-spades { background:#5e5b7f; }
 .game-hearts { background:#d96d8b; }
 .game-golf { background:#71a66a; }
+.game-flip7 { background:#34a6c7; }
+.game-themind { background:#343142; }
+.game-millebornes { background:#2f9bc7; }
 
 input, select {
   width: 100%;
@@ -256,6 +259,9 @@ label {
     <button class="game-spades" onclick="chooseGame('spades')">♠️ Spades</button>
     <button class="game-hearts" onclick="chooseGame('hearts')">♥️ Hearts</button>
     <button class="game-golf" onclick="chooseGame('golf')">⛳ Golf</button>
+    <button class="game-flip7" onclick="chooseGame('flip7')">🎴 Flip 7</button>
+    <button class="game-themind" onclick="chooseGame('themind')">🧠 The Mind</button>
+    <button class="game-millebornes" onclick="chooseGame('millebornes')">🚗 Mille Bornes</button>
   </div>
 
   <div style="text-align:center;">
@@ -338,7 +344,10 @@ const gameNames = {
   skipbo: "⭐ Skip-Bo",
   spades: "♠️ Spades",
   hearts: "♥️ Hearts",
-  golf: "⛳ Golf"
+  golf: "⛳ Golf",
+  flip7: "🎴 Flip 7",
+  themind: "🧠 The Mind",
+  millebornes: "🚗 Mille Bornes"
 };
 
 const funMessages = [
@@ -580,7 +589,12 @@ function endGame() {
 }
 
 function isHighScoreGame() {
-  return selectedGame === "catan" || selectedGame === "uno" || selectedGame === "skipbo" || selectedGame === "spades";
+  return selectedGame === "catan" ||
+         selectedGame === "uno" ||
+         selectedGame === "skipbo" ||
+         selectedGame === "spades" ||
+         selectedGame === "flip7" ||
+         selectedGame === "millebornes";
 }
 
 function renderGame() {
@@ -589,6 +603,14 @@ function renderGame() {
   renderHistory();
 
   if (selectedGame === "notermann" && getNotermannRoundCount() >= notermannSequence.length) {
+    gameEnded = true;
+  }
+
+  if (selectedGame === "flip7" && players.some(p => p.total >= 200)) {
+    gameEnded = true;
+  }
+
+  if (selectedGame === "millebornes" && players.some(p => p.total >= 5000)) {
     gameEnded = true;
   }
 
@@ -604,6 +626,9 @@ function renderGame() {
   if (selectedGame === "skipbo") renderSkipBo();
   if (selectedGame === "spades") renderSpades();
   if (selectedGame === "hearts") renderHearts();
+  if (selectedGame === "flip7") renderFlip7();
+  if (selectedGame === "themind") renderTheMind();
+  if (selectedGame === "millebornes") renderMilleBornes();
 
   renderScoreGraph();
   saveGame();
@@ -628,6 +653,20 @@ function recomputeTotals() {
 
 function renderScoreboard() {
   const table = document.getElementById("scoreboard");
+
+  if (selectedGame === "themind") {
+    const mindRounds = rounds.filter(r => r && r.game === "themind");
+    const last = mindRounds[mindRounds.length - 1];
+
+    table.innerHTML = `
+      <tr><th>Team Progress</th><th>Status</th></tr>
+      <tr class="leader"><td>Current Level</td><td>${last ? last.level : 1}</td></tr>
+      <tr><td>Lives</td><td>${last ? last.lives : "—"}</td></tr>
+      <tr><td>Stars</td><td>${last ? last.stars : "—"}</td></tr>
+    `;
+    return;
+  }
+
   let sorted = [...players];
 
   if (isHighScoreGame()) sorted.sort((a,b) => b.total - a.total);
@@ -662,6 +701,17 @@ function renderHistory() {
 
     if (round.type === "note") {
       return `<div class="round-item">${round.text}</div>`;
+    }
+
+    if (round.game === "themind") {
+      return `
+        <div class="round-item">
+          <strong>Level ${round.level}</strong> — ${round.passed ? "Passed ✅" : "Failed ❌"}<br>
+          Lives: ${round.lives}, Stars: ${round.stars}
+          <br>
+          <button class="edit-btn small-btn" onclick="editMindRound(${index})">Edit</button>
+        </div>
+      `;
     }
 
     return `
@@ -720,12 +770,51 @@ function editRound(index) {
   renderGame();
 }
 
+function editMindRound(index) {
+  const round = rounds[index];
+  if (!round || round.game !== "themind") return;
+
+  let level = prompt("Edit level:", round.level);
+  if (level === null) return;
+  if (!isWholeNumber(level)) {
+    alert("Level must be a whole number.");
+    return;
+  }
+
+  let lives = prompt("Edit lives:", round.lives);
+  if (lives === null) return;
+  if (!isWholeNumber(lives)) {
+    alert("Lives must be a whole number.");
+    return;
+  }
+
+  let stars = prompt("Edit stars:", round.stars);
+  if (stars === null) return;
+  if (!isWholeNumber(stars)) {
+    alert("Stars must be a whole number.");
+    return;
+  }
+
+  round.level = Number(level);
+  round.lives = Number(lives);
+  round.stars = Number(stars);
+
+  saveGame();
+  renderGame();
+}
+
 function renderWinnerMessage() {
   const box = document.getElementById("winnerMessage");
   box.classList.add("hidden");
   box.innerHTML = "";
 
   if (!gameEnded) return;
+
+  if (selectedGame === "themind") {
+    box.innerHTML = `🧠 The Mind session complete!`;
+    box.classList.remove("hidden");
+    return;
+  }
 
   const sorted = [...players].sort((a,b) => {
     if (isHighScoreGame()) return b.total - a.total;
@@ -765,7 +854,7 @@ function renderScoreGraph() {
   const graphBox = document.getElementById("scoreGraph");
   const summaryBox = document.getElementById("finalScoresSummary");
 
-  if (!gameEnded) {
+  if (!gameEnded || selectedGame === "themind") {
     graphCard.classList.add("hidden");
     graphBox.innerHTML = "";
     summaryBox.innerHTML = "";
@@ -1411,6 +1500,156 @@ function submitHeartsRound() {
   rounds.push(round);
   showFunMessage();
   recomputeTotals();
+  saveGame();
+  renderGame();
+}
+
+/* FLIP 7 */
+
+function renderFlip7() {
+  document.getElementById("gameHint").innerText =
+    "Flip 7: enter each player's points for the round. Highest total wins. First to 200 ends the game.";
+
+  let html = `<h3>Add Round ${rounds.filter(r => r.type === "round").length + 1}</h3>
+  <p class="small">Include card points, modifiers, x2, and any Flip 7 bonus in the round score.</p>`;
+
+  players.forEach(p => {
+    html += `
+      <label>${p.name}'s round score</label>
+      <input id="flip7_${p.id}" type="number" step="1" inputmode="numeric" placeholder="Required" onfocus="this.select()">
+    `;
+  });
+
+  html += `<button class="good" onclick="submitFlip7Round()">Add Round</button>`;
+  document.getElementById("scoringArea").innerHTML = html;
+}
+
+function submitFlip7Round() {
+  const ids = players.map(p => "flip7_" + p.id);
+  if (!validateRequiredScores(ids)) return;
+
+  const scores = players.map(p => ({
+    playerId: p.id,
+    name: p.name,
+    score: Number(document.getElementById("flip7_" + p.id).value)
+  }));
+
+  const label = `Round ${rounds.filter(r => r.type === "round").length + 1}`;
+  const round = makeRound(label, scores, false);
+  round.game = "flip7";
+
+  rounds.push(round);
+  showFunMessage();
+  recomputeTotals();
+
+  if (players.some(p => p.total >= 200)) {
+    gameEnded = true;
+  }
+
+  saveGame();
+  renderGame();
+}
+
+/* THE MIND */
+
+function renderTheMind() {
+  document.getElementById("gameHint").innerText =
+    "The Mind: cooperative progress tracker. Track the level, lives, stars, and whether the team passed.";
+
+  const mindRounds = rounds.filter(r => r && r.game === "themind");
+  const last = mindRounds[mindRounds.length - 1];
+  const nextLevel = last && last.passed ? last.level + 1 : (last ? last.level : 1);
+  const lives = last ? last.lives : "";
+  const stars = last ? last.stars : "";
+
+  let html = `
+    <h3>Track Level</h3>
+
+    <label>Level</label>
+    <input id="mindLevel" type="number" step="1" inputmode="numeric" placeholder="Required" value="${nextLevel}" onfocus="this.select()">
+
+    <label>Lives Remaining</label>
+    <input id="mindLives" type="number" step="1" inputmode="numeric" placeholder="Required" value="${lives}" onfocus="this.select()">
+
+    <label>Stars Remaining</label>
+    <input id="mindStars" type="number" step="1" inputmode="numeric" placeholder="Required" value="${stars}" onfocus="this.select()">
+
+    <label>Result</label>
+    <select id="mindPassed">
+      <option value="true">Passed</option>
+      <option value="false">Failed</option>
+    </select>
+
+    <button class="good" onclick="submitMindRound()">Save Level</button>
+  `;
+
+  document.getElementById("scoringArea").innerHTML = html;
+}
+
+function submitMindRound() {
+  if (!validateRequiredScores(["mindLevel", "mindLives", "mindStars"])) return;
+
+  const level = Number(document.getElementById("mindLevel").value);
+  const lives = Number(document.getElementById("mindLives").value);
+  const stars = Number(document.getElementById("mindStars").value);
+  const passed = document.getElementById("mindPassed").value === "true";
+
+  rounds.push({
+    type: "mind",
+    game: "themind",
+    level,
+    lives,
+    stars,
+    passed
+  });
+
+  showFunMessage();
+  saveGame();
+  renderGame();
+}
+
+/* MILLE BORNES */
+
+function renderMilleBornes() {
+  document.getElementById("gameHint").innerText =
+    "Mille Bornes: enter each player/team's points for the hand. Highest total wins. Traditional target is 5,000.";
+
+  let html = `<h3>Add Hand ${rounds.filter(r => r.type === "round").length + 1}</h3>
+  <p class="small">Include miles, safety cards, coup-fourré bonuses, trip/completion bonuses, and any other scoring bonuses.</p>`;
+
+  players.forEach(p => {
+    html += `
+      <label>${p.name}'s hand score</label>
+      <input id="mille_${p.id}" type="number" step="1" inputmode="numeric" placeholder="Required" onfocus="this.select()">
+    `;
+  });
+
+  html += `<button class="good" onclick="submitMilleBornesRound()">Add Hand</button>`;
+  document.getElementById("scoringArea").innerHTML = html;
+}
+
+function submitMilleBornesRound() {
+  const ids = players.map(p => "mille_" + p.id);
+  if (!validateRequiredScores(ids)) return;
+
+  const scores = players.map(p => ({
+    playerId: p.id,
+    name: p.name,
+    score: Number(document.getElementById("mille_" + p.id).value)
+  }));
+
+  const label = `Hand ${rounds.filter(r => r.type === "round").length + 1}`;
+  const round = makeRound(label, scores, false);
+  round.game = "millebornes";
+
+  rounds.push(round);
+  showFunMessage();
+  recomputeTotals();
+
+  if (players.some(p => p.total >= 5000)) {
+    gameEnded = true;
+  }
+
   saveGame();
   renderGame();
 }
